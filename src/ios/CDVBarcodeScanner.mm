@@ -6,8 +6,11 @@
  * Copyright (c) 2011, IBM Corporation
  */
 
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <AssetsLibrary/AssetsLibrary.h>
+#import "ScanViewController.h"
 
 //------------------------------------------------------------------------------
 // use the all-in-one version of zxing that we built
@@ -151,66 +154,75 @@
     CDVbcsProcessor* processor;
     NSString*       callback;
     NSString*       capabilityError;
-
+    
     callback = command.callbackId;
-
-    NSDictionary* options;
-    if (command.arguments.count == 0) {
-      options = [NSDictionary dictionary];
-    } else {
-      options = command.arguments[0];
-    }
-
-    BOOL preferFrontCamera = [options[@"preferFrontCamera"] boolValue];
-    BOOL showFlipCameraButton = [options[@"showFlipCameraButton"] boolValue];
-    BOOL showTorchButton = [options[@"showTorchButton"] boolValue];
-    BOOL disableAnimations = [options[@"disableAnimations"] boolValue];
-
+    
     // We allow the user to define an alternate xib file for loading the overlay.
-    NSString *overlayXib = options[@"overlayXib"];
-
+    NSString *overlayXib = nil;
+    if ( [command.arguments count] >= 1 )
+    {
+        overlayXib = [command.arguments objectAtIndex:0];
+    }
+    
     capabilityError = [self isScanNotPossible];
     if (capabilityError) {
         [self returnError:capabilityError callback:callback];
         return;
-    } else if ([self notHasPermission]) {
-        NSString * error = NSLocalizedString(@"Access to the camera has been prohibited; please enable it in the Settings app to continue.",nil);
-        [self returnError:error callback:callback];
-        return;
     }
-
-    processor = [[[CDVbcsProcessor alloc]
-                initWithPlugin:self
-                      callback:callback
-          parentViewController:self.viewController
-            alterateOverlayXib:overlayXib
-            ] autorelease];
+    
+    processor = [[CDVbcsProcessor alloc]
+                 initWithPlugin:self
+                 callback:callback
+                 parentViewController:self.viewController
+                 alterateOverlayXib:overlayXib
+                 ];
+    [processor retain];
+    [processor retain];
+    [processor retain];
     // queue [processor scanBarcode] to run on the event loop
+    //  [processor performSelector:@selector(scanBarcode) withObject:nil afterDelay:0];
+    //扫描二维码
+    ScanViewController *scannerVC = [[ScanViewController alloc] init];
+    scannerVC.parVC = self.viewController;
+    scannerVC.cancelScanAction = ^void(NSString *result){
+        CDVPluginResult *pluginresult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:result];
+        [self.commandDelegate sendPluginResult:pluginresult callbackId:command.callbackId];
+    };
+    scannerVC.finishScanAction = ^void(NSString *result)
+    {
+        //[self barcodeScanSucceeded:result format:@"QR_CODE"];
+        NSNumber* cancelledNumber = [NSNumber numberWithInt:(NO?1:0)];
+        
+        NSMutableDictionary* resultDict = [[[NSMutableDictionary alloc] init] autorelease];
+        [resultDict setObject:result     forKey:@"text"];
+        [resultDict setObject:@"QR_CODE"          forKey:@"format"];
+        [resultDict setObject:cancelledNumber forKey:@"cancelled"];
+        
+        CDVPluginResult* cDvresult = [CDVPluginResult
+                                      resultWithStatus: CDVCommandStatus_OK
+                                      messageAsDictionary: resultDict
+                                      ];
+        
+//        NSString* js = [cDvresult toSuccessCallbackString: command.callbackId];
+        
+        [self.commandDelegate sendPluginResult:cDvresult callbackId:command.callbackId];
 
-    if (preferFrontCamera) {
-      processor.isFrontCamera = true;
-    }
-
-    if (showFlipCameraButton) {
-      processor.isShowFlipCameraButton = true;
-    }
-
-    if (showTorchButton) {
-      processor.isShowTorchButton = true;
-    }
-
-    processor.isTransitionAnimated = !disableAnimations;
-
-    processor.formats = options[@"formats"];
-
-    [processor performSelector:@selector(scanBarcode) withObject:nil afterDelay:0];
+        
+        [processor release];
+        [processor release];
+        [processor release];
+    };
+    [self.viewController presentViewController:scannerVC animated:YES completion:nil];
+    ////////////////////////////////
+    
+    
 }
 
 //--------------------------------------------------------------------------
 - (void)encode:(CDVInvokedUrlCommand*)command {
     if([command.arguments count] < 1)
         [self returnError:@"Too few arguments!" callback:command.callbackId];
-
+    
     CDVqrProcessor* processor;
     NSString*       callback;
     callback = command.callbackId;
@@ -260,7 +272,7 @@
 //--------------------------------------------------------------------------
 - (void)returnError:(NSString*)message callback:(NSString*)callback {
     CDVPluginResult* result = [CDVPluginResult
-                               resultWithStatus: CDVCommandStatus_ERROR
+                               resultWithStatus: CDVCommandStatus_OK
                                messageAsString: message
                                ];
 
